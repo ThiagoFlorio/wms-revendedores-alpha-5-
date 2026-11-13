@@ -1388,6 +1388,14 @@
                 this.carregarDados();
                 window.addEventListener('scroll', this.gerenciarScrollIlha, { passive: true });
                 
+                // Ouvir alterações em tempo real feitas em outras abas / dispositivos
+                window.addEventListener('storage', (e) => {
+                    if (e.key === 'wms_cache_optimized_v5') {
+                        this.carregarDados();
+                        this.exibirToast('Estoque sincronizado em tempo real!', 'sucesso');
+                    }
+                });
+                
                 const sessao = localStorage.getItem('wms_sessao_ativa_' + window.name) || sessionStorage.getItem('wms_usuario_logado');
                 if (sessao) {
                     try {
