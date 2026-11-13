@@ -13,6 +13,16 @@
     <!-- Vue 3 CDN -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Expor Firebase globalmente para o Vue
+        window.firebaseApp = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, getDoc, onSnapshot, collection };
+    </script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -183,8 +193,16 @@
                     </nav>
                 </div>
 
-                <!-- Perfil & Logout -->
-                <div class="flex items-center space-x-2 shrink-0 self-end lg:self-center bg-chumbo-950/90 px-3 py-1.5 rounded-full border border-chumbo-800">
+                <!-- Status Online Cloud / Perfil -->
+                <div class="flex items-center space-x-3 shrink-0 self-end lg:self-center bg-chumbo-950/90 px-3.5 py-1.5 rounded-full border border-chumbo-800">
+                    <div class="flex items-center space-x-1.5" title="Sincronização em nuvem ativa">
+                        <span class="relative flex h-2.5 w-2.5">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                        </span>
+                        <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Cloud Ativa</span>
+                    </div>
+                    <span class="text-xs text-chumbo-700">|</span>
                     <span class="text-[11px] font-bold text-slate-300">
                         {{ usuarioLogado.nome }} <span class="text-[9px] text-gb-verde font-mono">({{ usuarioLogado.perfil }})</span>
                     </span>
@@ -1228,6 +1246,12 @@
                     formLogin: { usuario: '', senha: '' },
                     erroLogin: '',
 
+                    // Conexão Firebase Cloud
+                    db: null,
+                    auth: null,
+                    isCloudSyncing: false,
+                    conectadosCount: 1,
+
                     usuariosCadastrados: [
                         { nome: 'Administrador Cedro Rosa', usuario: 'admin', senha: 'admin123', perfil: 'ADMIN' },
                         { nome: 'Estoquista Principal', usuario: 'estoque', senha: '123456', perfil: 'ESTOQUISTA' }
@@ -1385,16 +1409,8 @@
                 }
             },
             mounted() {
-                this.carregarDados();
+                this.inicializarCloudFirebase();
                 window.addEventListener('scroll', this.gerenciarScrollIlha, { passive: true });
-                
-                // Ouvir alterações em tempo real feitas em outras abas / dispositivos
-                window.addEventListener('storage', (e) => {
-                    if (e.key === 'wms_cache_optimized_v5') {
-                        this.carregarDados();
-                        this.exibirToast('Estoque sincronizado em tempo real!', 'sucesso');
-                    }
-                });
                 
                 const sessao = localStorage.getItem('wms_sessao_ativa_' + window.name) || sessionStorage.getItem('wms_usuario_logado');
                 if (sessao) {
@@ -1409,6 +1425,67 @@
                 window.removeEventListener('scroll', this.gerenciarScrollIlha);
             },
             methods: {
+                async inicializarCloudFirebase() {
+                    try {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'cedro-rosa-wms-v1';
+                        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+                        
+                        if (!firebaseConfig) {
+                            this.carregarDados();
+                            return;
+                        }
+
+                        const fb = window.firebaseApp;
+                        const app = fb.initializeApp(firebaseConfig);
+                        this.db = fb.getFirestore(app);
+                        this.auth = fb.getAuth(app);
+
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await fb.signInWithCustomToken(this.auth, __initial_auth_token);
+                        } else {
+                            await fb.signInAnonymously(this.auth);
+                        }
+
+                        this.isCloudSyncing = true;
+                        
+                        // Configurar escuta em tempo real (Firestore public data)
+                        const docRef = fb.doc(this.db, 'artifacts', appId, 'public', 'data', 'wms_state');
+                        
+                        fb.onSnapshot(docRef, (docSnap) => {
+                            if (docSnap.exists()) {
+                                const data = docSnap.data();
+                                if (data && data.racks) {
+                                    this.racks = data.racks;
+                                    this.estoque = data.estoque || [];
+                                    this.catalogoSKUs = data.catalogoSKUs || this.getCatalogoSKUsDefault();
+                                    this.historico = data.historico || [];
+                                    if (data.usuariosCadastrados) {
+                                        this.usuariosCadastrados = data.usuariosCadastrados;
+                                    }
+                                }
+                            } else {
+                                // Inicializar cloud com dados padrão se vazio
+                                this.carregarDadosDemonstracao();
+                                this.salvarNoLocalStorage();
+                            }
+                        }, (error) => {
+                            console.error("Erro na sincronização cloud:", error);
+                            this.carregarDados();
+                        });
+
+                        // Registrar presença do dispositivo conectado
+                        const userId = this.auth.currentUser ? this.auth.currentUser.uid : 'anon';
+                        const dispRef = fb.doc(this.db, 'artifacts', appId, 'public', 'data', 'dispositivos_' + userId);
+                        await fb.setDoc(dispRef, {
+                            nome: navigator.platform.includes('iPhone') ? 'iPhone / Mobile' : 'Navegador Desktop',
+                            ultimoAcesso: new Date().toLocaleTimeString('pt-BR')
+                        }, { merge: true });
+
+                    } catch (e) {
+                        console.warn("Fallback para armazenamento local:", e);
+                        this.carregarDados();
+                    }
+                },
                 realizarLogin() {
                     this.erroLogin = '';
                     const usr = this.formLogin.usuario.trim().toLowerCase();
@@ -1574,8 +1651,19 @@
                         usuariosCadastrados: this.usuariosCadastrados,
                         atualizadoEm: new Date().toISOString()
                     };
+
+                    // Salvar localmente
                     localStorage.setItem('wms_cache_optimized_v5', JSON.stringify(pacoteCache));
                     localStorage.setItem('wms_usuarios_v1', JSON.stringify(this.usuariosCadastrados));
+
+                    // Sincronizar na nuvem em tempo real se o Firebase estiver ativo
+                    if (this.db && this.auth && this.auth.currentUser) {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'cedro-rosa-wms-v1';
+                        const docRef = window.firebaseApp.doc(this.db, 'artifacts', appId, 'public', 'data', 'wms_state');
+                        window.firebaseApp.setDoc(docRef, pacoteCache).catch(err => {
+                            console.error("Erro ao salvar na nuvem:", err);
+                        });
+                    }
                 },
                 validarPosicao(rackId, linha, coluna) {
                     const rack = this.racks.find(r => r.id === rackId);
