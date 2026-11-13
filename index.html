@@ -1,0 +1,1869 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS Pro - Controle de Estoque & Alocação de Caixas</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        chumbo: {
+                            950: '#0e1013',
+                            900: '#141619',
+                            850: '#191c20',
+                            800: '#1f2329',
+                            700: '#2a2f37',
+                        },
+                        gb: {
+                            verde: '#009B65',
+                            magenta: '#E047B0',
+                            vinho: '#8A1B2E',
+                            eudora: '#583546',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [v-cloak] { display: none !important; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #141619; }
+        ::-webkit-scrollbar-thumb { background: #2a2f37; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #009B65; }
+
+        .neon-border-verde {
+            border-color: rgba(0, 155, 101, 0.55);
+            box-shadow: 0 0 18px rgba(0, 155, 101, 0.16);
+        }
+        .neon-border-magenta {
+            border-color: rgba(224, 71, 176, 0.55);
+            box-shadow: 0 0 18px rgba(224, 71, 176, 0.16);
+        }
+        .neon-border-vinho {
+            border-color: rgba(138, 27, 46, 0.55);
+            box-shadow: 0 0 18px rgba(138, 27, 46, 0.22);
+        }
+        .neon-island {
+            border: 1px solid rgba(0, 155, 101, 0.45);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65), 0 0 22px rgba(0, 155, 101, 0.18), inset 0 1px 0 rgba(224, 71, 176, 0.25);
+        }
+    </style>
+</head>
+<body class="bg-chumbo-900 text-slate-100 font-sans antialiased min-h-screen selection:bg-gb-verde selection:text-white">
+    <div id="app" v-cloak class="flex flex-col min-h-screen">
+        
+        <!-- TELA DE LOGIN -->
+        <div v-if="!usuarioLogado" class="fixed inset-0 z-50 bg-chumbo-950 flex items-center justify-center p-4">
+            <div class="max-w-md w-full bg-chumbo-900 rounded-2xl p-8 border neon-border-verde shadow-2xl space-y-6">
+                <div class="text-center space-y-2">
+                    <h2 class="text-xl font-black text-white">Controle de Estoque WMS</h2>
+                    <p class="text-xs text-slate-400">Entre com sua credencial de acesso ao sistema</p>
+                </div>
+
+                <form @submit.prevent="realizarLogin" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Usuário ou E-mail</label>
+                        <input v-model="formLogin.usuario" type="text" placeholder="Ex: admin ou estoque" required
+                               class="w-full bg-chumbo-950 border border-chumbo-700 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-gb-verde" />
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Senha de Acesso</label>
+                        <input v-model="formLogin.senha" type="password" placeholder="••••••••" required
+                               class="w-full bg-chumbo-950 border border-chumbo-700 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-gb-verde" />
+                    </div>
+
+                    <div v-if="erroLogin" class="p-3 bg-gb-vinho/30 border border-rose-500/50 rounded-xl text-xs text-rose-200 text-center font-bold">
+                        {{ erroLogin }}
+                    </div>
+
+                    <button type="submit" class="w-full py-3.5 bg-gb-verde hover:bg-emerald-600 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(0,155,101,0.4)] transition text-sm">
+                        Entrar
+                    </button>
+                </form>
+
+                <div class="border-t border-chumbo-800 pt-4 text-center">
+                    <p class="text-[11px] text-slate-400">
+                        &copy; WMS &bull; Todos os direitos reservados
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- CABEÇALHO SUPERIOR -->
+        <header v-if="usuarioLogado" :class="esconderIlha ? '-translate-y-28 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'"
+                class="sticky top-4 z-30 px-4 sm:px-6 pt-6 pb-3 transition-all duration-300 ease-out">
+            <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-3">
+                
+                <!-- Identidade Minimalista à Esquerda -->
+                <div class="flex items-center space-x-2 shrink-0 self-start lg:self-center">
+                    <div class="w-7 h-7 rounded-lg bg-chumbo-800 border border-gb-verde/50 shadow-[0_0_8px_rgba(0,155,101,0.25)] flex items-center justify-center text-gb-verde">
+                        <i class="fa-solid fa-boxes-stacked text-xs"></i>
+                    </div>
+                    <div class="leading-none">
+                        <span class="text-[11px] font-extrabold tracking-tight text-white block">Controle de Estoque WMS</span>
+                        <span class="text-[9px] font-bold text-gb-magenta tracking-wide">Cedro Rosa</span>
+                    </div>
+                </div>
+
+                <!-- Ilha Centralizada Compacta -->
+                <div class="bg-chumbo-950/95 backdrop-blur-xl text-white rounded-full neon-island px-4 py-2 flex items-center justify-center">
+                    <nav class="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+                        <button @click="activeTab = 'home'" 
+                                :class="activeTab === 'home' ? 'bg-gb-verde text-white shadow-[0_0_12px_rgba(0,155,101,0.6)]' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-house"></i>
+                            <span>Home</span>
+                        </button>
+
+                        <button @click="activeTab = 'mapa'" 
+                                :class="activeTab === 'mapa' ? 'bg-gb-verde text-white shadow-[0_0_12px_rgba(0,155,101,0.6)]' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-grip"></i>
+                            <span>Mapa</span>
+                        </button>
+
+                        <button @click="activeTab = 'entrada'" 
+                                :class="activeTab === 'entrada' ? 'bg-gb-magenta text-white shadow-[0_0_12px_rgba(224,71,176,0.6)]' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-plus"></i>
+                            <span>Alocar</span>
+                        </button>
+
+                        <button @click="activeTab = 'fefo'" 
+                                :class="activeTab === 'fefo' ? 'bg-gb-verde text-white shadow-[0_0_12px_rgba(0,155,101,0.6)]' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-truck-ramp-box"></i>
+                            <span>Expedição</span>
+                        </button>
+
+                        <button @click="activeTab = 'racks'" 
+                                :class="activeTab === 'racks' ? 'bg-gb-eudora text-white shadow-[0_0_12px_rgba(88,53,70,0.85)] ring-1 ring-gb-magenta/50' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-sliders"></i>
+                            <span>Gerenciar</span>
+                        </button>
+
+                        <button @click="activeTab = 'skus'" 
+                                :class="activeTab === 'skus' ? 'bg-gb-magenta text-white shadow-[0_0_12px_rgba(224,71,176,0.6)]' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-tags"></i>
+                            <span>SKUs</span>
+                        </button>
+
+                        <button @click="activeTab = 'historico'" 
+                                :class="activeTab === 'historico' ? 'bg-gb-vinho text-white shadow-[0_0_12px_rgba(138,27,46,0.8)]' : 'text-slate-300 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                            <span>Histórico</span>
+                        </button>
+
+                        <button v-if="usuarioLogado.perfil === 'ADMIN'" @click="activeTab = 'admin'" 
+                                :class="activeTab === 'admin' ? 'bg-amber-500 text-chumbo-950 shadow-[0_0_12px_rgba(245,158,11,0.8)]' : 'text-amber-400 hover:text-white hover:bg-chumbo-800'"
+                                class="px-4 py-1.5 rounded-full text-xs font-black transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-shield-halved"></i>
+                            <span>Admin</span>
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Perfil & Logout -->
+                <div class="flex items-center space-x-2 shrink-0 self-end lg:self-center bg-chumbo-950/90 px-3 py-1.5 rounded-full border border-chumbo-800">
+                    <span class="text-[11px] font-bold text-slate-300">
+                        {{ usuarioLogado.nome }} <span class="text-[9px] text-gb-verde font-mono">({{ usuarioLogado.perfil }})</span>
+                    </span>
+                    <button @click="realizarLogout" title="Sair do sistema" class="text-xs text-rose-400 hover:text-rose-300 p-1">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- CONTEÚDO PRINCIPAL -->
+        <div v-if="usuarioLogado" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col space-y-8">
+            
+            <!-- ABA HOME -->
+            <div v-if="activeTab === 'home'" class="space-y-12">
+                <!-- LOCALIZADOR RÁPIDO -->
+                <div class="bg-chumbo-800 p-6 rounded-2xl border neon-border-verde space-y-4">
+                    <div class="text-center max-w-xl mx-auto space-y-1">
+                        <h2 class="text-lg font-black text-white">Localizador de Estoque & Produtos</h2>
+                        <p class="text-xs text-slate-400">Digite o código SKU, lote, produto ou endereço para localizar instantaneamente</p>
+                    </div>
+
+                    <div class="max-w-xl mx-auto relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gb-verde text-sm"></i>
+                        <input v-model="buscaGlobal" type="text" placeholder="Ex: 50022, L2611A, R2-02-2-A..."
+                               class="w-full bg-chumbo-950 border border-chumbo-700 rounded-xl pl-11 pr-4 py-3 text-sm text-white focus:ring-2 focus:ring-gb-verde font-mono" />
+                    </div>
+
+                    <div v-if="buscaGlobal.trim().length > 0" class="bg-chumbo-900 rounded-xl border border-chumbo-700 p-4 space-y-3">
+                        <div class="flex justify-between items-center text-xs border-b border-chumbo-800 pb-2">
+                            <span class="font-bold text-gb-verde">Resultados ({{ resultadoBuscaEstoque.length }})</span>
+                            <button @click="buscaGlobal = ''" class="text-slate-400 hover:text-white">Limpar</button>
+                        </div>
+                        <div class="space-y-2 max-h-72 overflow-y-auto">
+                            <div v-if="resultadoBuscaEstoque.length === 0" class="text-center py-4 text-slate-400 text-xs italic">
+                                Nenhum item encontrado.
+                            </div>
+                            <div v-for="item in resultadoBuscaEstoque" :key="item.id" 
+                                 class="bg-chumbo-950 p-3 rounded-lg border border-chumbo-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-mono font-bold text-gb-verde text-xs bg-gb-verde/15 px-2 py-0.5 rounded">{{ item.sku }}</span>
+                                        <span class="font-mono font-black text-white text-xs">{{ item.enderecoId }}</span>
+                                    </div>
+                                    <p class="text-xs text-slate-300 font-semibold mt-1">{{ item.produto }}</p>
+                                    <p class="text-[10px] text-slate-400">Qtd: {{ item.quantidadeUnidades }} un &bull; Lote: {{ item.lote }} &bull; Val: {{ item.validadeMMYY }}</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+                                    <button @click="focarEVisualizarEndereco(item.enderecoId, item.rackId)" class="px-3 py-1.5 bg-chumbo-800 hover:bg-gb-verde text-slate-200 text-xs font-bold rounded-lg transition">
+                                        Ver no Mapa &rarr;
+                                    </button>
+                                    <button @click="prepararTransferenciaCaixa(item)" class="px-3 py-1.5 bg-chumbo-700 hover:bg-chumbo-800 text-white text-xs font-bold rounded-lg transition">
+                                        Mover
+                                    </button>
+                                    <button @click="abrirModalBaixa(item)" class="px-3 py-1.5 bg-gb-verde hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition">
+                                        Expedir
+                                    </button>
+                                    <button @click="excluirAlocacaoDireta(item)" title="Excluir alocação" class="px-3 py-1.5 bg-gb-vinho/30 hover:bg-gb-vinho text-rose-300 hover:text-white border border-rose-500/40 text-xs font-bold rounded-lg transition flex items-center gap-1">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                        <span>Excluir</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAINEL GERAL (KPIS) -->
+                <div class="space-y-3 pt-4">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-extrabold uppercase tracking-wider text-slate-300">Painel Geral</span>
+                        <div class="h-px flex-1 bg-chumbo-700"></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                        <div class="bg-chumbo-800 p-6 rounded-2xl border neon-border-verde flex items-center justify-between">
+                            <div>
+                                <p class="text-[11px] font-bold uppercase tracking-wider text-gb-verde">Caixas Alocadas</p>
+                                <h3 class="text-3xl font-black text-white mt-1">{{ totalCaixasEmEstoque }} <span class="text-xs font-normal text-slate-400">caixas</span></h3>
+                                <p class="text-xs text-slate-400 mt-1.5 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-boxes-packing text-gb-verde"></i>
+                                    <span class="font-bold text-slate-200">{{ totalUnidadesEmEstoque.toLocaleString('pt-BR') }}</span> unidades totais
+                                </p>
+                            </div>
+                            <div class="p-3.5 bg-gb-verde/15 text-gb-verde rounded-2xl border border-gb-verde/30">
+                                <i class="fa-solid fa-box text-2xl"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-chumbo-800 p-6 rounded-2xl border neon-border-magenta flex items-center justify-between">
+                            <div>
+                                <p class="text-[11px] font-bold uppercase tracking-wider text-gb-magenta">Ocupação das Células</p>
+                                <div class="flex items-baseline space-x-1.5 mt-1">
+                                    <h3 class="text-3xl font-black text-white">{{ taxaOcupacao.toFixed(1) }}%</h3>
+                                    <span class="text-xs text-slate-400">({{ totalCelulasOcupadas }}/{{ totalCelulasDisponiveis }})</span>
+                                </div>
+                                <div class="w-full bg-chumbo-950 rounded-full h-2 mt-2.5 overflow-hidden border border-chumbo-700">
+                                    <div class="h-2 rounded-full transition-all duration-500"
+                                         :class="taxaOcupacao > 90 ? 'bg-gb-vinho' : (taxaOcupacao > 75 ? 'bg-amber-500' : 'bg-gb-magenta')"
+                                         :style="{ width: Math.min(taxaOcupacao, 100) + '%' }"></div>
+                                </div>
+                            </div>
+                            <div class="p-3.5 bg-gb-magenta/15 text-gb-magenta rounded-2xl border border-gb-magenta/30">
+                                <i class="fa-solid fa-chart-pie text-2xl"></i>
+                            </div>
+                        </div>
+
+                        <div class="bg-chumbo-800 p-6 rounded-2xl border neon-border-vinho flex items-center justify-between">
+                            <div>
+                                <p class="text-[11px] font-bold uppercase tracking-wider text-rose-400">Alertas de Validade</p>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <h3 class="text-3xl font-black" :class="lotesVencidosCount > 0 ? 'text-rose-400' : 'text-white'">
+                                        {{ lotesVencidosCount + lotesProximosVencerCount }}
+                                    </h3>
+                                    <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full"
+                                          :class="lotesVencidosCount > 0 ? 'bg-gb-vinho text-rose-200 border border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'">
+                                        {{ lotesVencidosCount > 0 ? lotesVencidosCount + ' vencidos' : lotesProximosVencerCount + ' < 6 meses' }}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1.5">Prioridade para expedição (FEFO)</p>
+                            </div>
+                            <div class="p-3.5 bg-gb-vinho/30 text-rose-400 rounded-2xl border border-rose-500/30">
+                                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MAPA VISUAL -->
+            <section v-if="activeTab === 'home' || activeTab === 'mapa'" class="bg-chumbo-800 rounded-2xl border neon-border-verde overflow-hidden p-6 space-y-6">
+                <div class="flex items-center justify-between border-b border-chumbo-700 pb-3">
+                    <h3 class="text-base font-black text-white flex items-center gap-2">
+                        <i class="fa-solid fa-grip text-gb-verde"></i>
+                        <span>Mapa Visual</span>
+                    </h3>
+                </div>
+
+                <div class="bg-chumbo-850 p-4 rounded-xl border border-chumbo-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div>
+                            <label class="text-[11px] font-bold text-gb-verde uppercase block mb-1">Selecione o Rack</label>
+                            <select v-model="rackSelecionadoId" class="bg-chumbo-900 border border-chumbo-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:ring-2 focus:ring-gb-verde shadow-sm">
+                                <option v-for="r in racks" :key="r.id" :value="r.id">
+                                    Rua {{ r.rua }} - Rack {{ r.rack }}
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <button v-if="rackAtual" @click="abrirEditarRack(rackAtual)" class="text-xs bg-chumbo-900 border border-chumbo-700 hover:border-gb-magenta text-slate-200 px-3.5 py-2 rounded-xl font-bold shadow-sm flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-pen-to-square text-gb-magenta"></i>
+                            <span>Editar Rack</span>
+                        </button>
+
+                        <button @click="abrirNovoRackModal" class="text-xs bg-gb-verde hover:bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold shadow-[0_0_12px_rgba(0,155,101,0.4)] flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Cadastrar</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between text-xs text-slate-300 bg-chumbo-900 p-3 rounded-xl border border-chumbo-700">
+                    <span class="font-bold uppercase tracking-wider text-gb-verde">Status das Células:</span>
+                    <div class="flex flex-wrap gap-4">
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-chumbo-800 border border-slate-600"></span> Vazio</span>
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-gb-verde shadow-[0_0_6px_#009B65]"></span> Ocupado</span>
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-amber-400"></span> Validade &lt; 6 meses</span>
+                        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-gb-vinho border border-rose-500"></span> Vencido</span>
+                    </div>
+                </div>
+
+                <div v-if="rackAtual" class="bg-chumbo-900 rounded-xl border border-chumbo-700 p-5 shadow-inner overflow-x-auto">
+                    <div class="min-w-[700px]">
+                        <div class="grid gap-3 mb-3" :style="{ gridTemplateColumns: `60px repeat(${rackAtual.colunas.length}, minmax(150px, 1fr))` }">
+                            <div class="text-center font-bold text-xs text-gb-verde uppercase flex items-center justify-center bg-chumbo-800 rounded-lg p-2 border border-chumbo-700">
+                                Linha
+                            </div>
+                            <div v-for="col in rackAtual.colunas" :key="col" 
+                                 class="text-center font-bold text-sm text-white bg-chumbo-800 py-2 rounded-lg border border-gb-verde/30 font-mono">
+                                COLUNA {{ col }}
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div v-for="linha in getLinhasDecrescentes(rackAtual.linhas)" :key="linha"
+                                 class="grid gap-3" :style="{ gridTemplateColumns: `60px repeat(${rackAtual.colunas.length}, minmax(150px, 1fr))` }">
+                                
+                                <div class="bg-gb-eudora text-white rounded-lg flex items-center justify-center font-bold font-mono text-sm border border-gb-magenta/40">
+                                    L{{ linha }}
+                                </div>
+
+                                <div v-for="coluna in rackAtual.colunas" :key="coluna"
+                                     @click="clicarNaCelula(rackAtual, linha, coluna)"
+                                     :class="getCelulaStyleClass(rackAtual, linha, coluna)"
+                                     class="p-3 rounded-xl border transition cursor-pointer transform hover:-translate-y-0.5 relative flex flex-col justify-between min-h-[120px]">
+                                    
+                                    <div class="flex items-center justify-between border-b border-chumbo-700 pb-1.5 mb-2">
+                                        <span class="font-mono font-extrabold text-xs text-white">
+                                            R{{ rackAtual.rua }}-{{ rackAtual.rack }}-{{ linha }}-{{ coluna }}
+                                        </span>
+                                        <span v-if="getCelulaConteudos(rackAtual, linha, coluna).length > 0" 
+                                              class="text-[10px] bg-gb-verde text-white px-1.5 py-0.5 rounded-full font-bold">
+                                            {{ getCelulaConteudos(rackAtual, linha, coluna).length }} cx
+                                        </span>
+                                    </div>
+
+                                    <template v-if="getCelulaConteudos(rackAtual, linha, coluna).length > 0">
+                                        <div class="space-y-1.5 max-h-[145px] overflow-y-auto pr-0.5">
+                                            <div v-for="cx in getCelulaConteudos(rackAtual, linha, coluna)" :key="cx.id"
+                                                 class="bg-chumbo-950/90 p-1.5 rounded-lg border border-chumbo-700">
+                                                <div class="flex items-center justify-between">
+                                                    <span class="font-mono font-black text-xs text-gb-verde bg-gb-verde/15 px-1.5 py-0.5 rounded border border-gb-verde/30">
+                                                        {{ cx.sku }}
+                                                    </span>
+                                                    <span class="text-[10px] font-bold text-slate-200">
+                                                        {{ cx.quantidadeUnidades }} un
+                                                    </span>
+                                                </div>
+                                                <p class="text-[10px] font-semibold text-slate-300 line-clamp-1 mt-0.5" :title="cx.produto">
+                                                    {{ cx.produto }}
+                                                </p>
+                                                <div class="flex items-center justify-between text-[9px] mt-1 pt-0.5 border-t border-chumbo-800">
+                                                    <span class="font-mono text-slate-400">L:{{ cx.lote }}</span>
+                                                    <span class="font-bold px-1 rounded" :class="getBadgeValidadeClass(cx.validadeMMYY)">
+                                                        {{ cx.validadeMMYY }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <template v-else>
+                                        <div class="flex-1 flex flex-col items-center justify-center text-slate-500">
+                                            <i class="fa-solid fa-plus text-xs mb-1 opacity-50"></i>
+                                            <span class="text-[10px] font-bold tracking-wider uppercase opacity-70">LIVRE</span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ALOCAR CAIXA -->
+            <section v-if="activeTab === 'home' || activeTab === 'entrada'" class="bg-chumbo-800 rounded-2xl border neon-border-magenta p-6">
+                <div class="max-w-3xl mx-auto space-y-6">
+                    <div>
+                        <h3 class="text-base font-black text-white flex items-center gap-2 mb-1">
+                            <i class="fa-solid fa-box-open text-gb-magenta"></i>
+                            <span>Alocação de Caixa Fechada</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">
+                            Informe o código SKU para preenchimento automático da descrição e quantidade padrão.
+                        </p>
+                    </div>
+
+                    <form @submit.prevent="confirmarAlocacaoCaixa" class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-300 uppercase mb-1">SKU / Código do Produto *</label>
+                                <input v-model="formAlocacao.sku" type="text" list="lista-skus-datalist" placeholder="Ex: 50022" required 
+                                       @input="onSKUInput" @change="onSKUInput"
+                                       class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2.5 text-sm font-mono font-bold text-white focus:ring-2 focus:ring-gb-magenta uppercase" />
+                                <datalist id="lista-skus-datalist">
+                                    <option v-for="item in catalogoSKUs" :key="item.sku" :value="item.sku">{{ item.descricao }}</option>
+                                </datalist>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-300 uppercase mb-1 flex items-center justify-between">
+                                    <span>Nome / Descrição do Produto *</span>
+                                    <span v-if="skuVinculadoCatalogo" class="text-[10px] font-bold text-gb-verde bg-gb-verde/15 border border-gb-verde/40 px-2 py-0.5 rounded-full">
+                                        <i class="fa-solid fa-link mr-1"></i>Vinculado
+                                    </span>
+                                </label>
+                                <input v-model="formAlocacao.produto" type="text" placeholder="Preenchido automaticamente" required
+                                       class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2.5 text-sm text-white focus:ring-2 focus:ring-gb-magenta" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Qtd Itens na Caixa *</label>
+                                <input v-model.number="formAlocacao.quantidadeUnidades" type="number" min="1" required
+                                       class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2.5 text-sm font-bold text-gb-verde focus:ring-2 focus:ring-gb-magenta" />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Número do Lote *</label>
+                                <input v-model="formAlocacao.lote" type="text" placeholder="Ex: L2611A" required
+                                       class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2.5 text-sm font-mono uppercase text-white focus:ring-2 focus:ring-gb-magenta" />
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-300 uppercase mb-1">Validade (MM/AA) *</label>
+                                <input v-model="formAlocacao.validadeMMYY" type="text" placeholder="Ex: 11/30" required
+                                       class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2.5 text-sm font-bold text-white focus:ring-2 focus:ring-gb-magenta" />
+                            </div>
+                        </div>
+
+                        <div class="border-t border-chumbo-700 pt-4">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-gb-magenta mb-3 flex items-center gap-1.5">
+                                <i class="fa-solid fa-location-dot"></i>
+                                <span>Seleção do Endereço de Destino</span>
+                            </h4>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-400 mb-1">Rack Destino</label>
+                                    <select v-model="formAlocacao.rackId" @change="onRackAlocacaoChange" required
+                                            class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-2.5 py-2.5 text-xs font-bold text-white">
+                                        <option v-for="r in racks" :key="r.id" :value="r.id">
+                                            Rua {{ r.rua }} - Rack {{ r.rack }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-400 mb-1">Linha (Nível)</label>
+                                    <select v-model.number="formAlocacao.linha" required class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-2.5 py-2.5 text-xs font-bold text-white">
+                                        <option v-for="l in (rackAlocacaoAtual ? rackAlocacaoAtual.linhas : 6)" :key="l" :value="l">
+                                            Linha {{ l }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-400 mb-1">Coluna</label>
+                                    <select v-model="formAlocacao.coluna" required class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-2.5 py-2.5 text-xs font-bold text-white">
+                                        <option v-for="c in (rackAlocacaoAtual ? rackAlocacaoAtual.colunas : ['A','B','C','D','E'])" :key="c" :value="c">
+                                            Coluna {{ c }}
+                                        </option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 p-4 rounded-xl border transition-all"
+                             :class="validacaoAlocacao.valido ? 'bg-chumbo-900 neon-border-verde text-white' : 'bg-gb-vinho/20 border-rose-500 text-rose-200'">
+                            <div class="flex items-start space-x-3">
+                                <div class="text-xl mt-0.5">
+                                    <i v-if="validacaoAlocacao.valido" class="fa-solid fa-circle-check text-gb-verde"></i>
+                                    <i v-else class="fa-solid fa-circle-xmark text-rose-500"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-sm">
+                                        Endereço Alvo: <span class="font-mono text-base underline text-gb-verde">{{ enderecoCalculadoForm }}</span>
+                                    </h4>
+                                    <div v-if="!validacaoAlocacao.valido" class="mt-2 text-xs text-rose-300">
+                                        <ul class="list-disc list-inside mt-1 space-y-0.5">
+                                            <li v-for="(err, idx) in validacaoAlocacao.erros" :key="idx">{{ err }}</li>
+                                        </ul>
+                                    </div>
+                                    <div v-else class="mt-1 space-y-1.5">
+                                        <p class="text-xs text-slate-300 font-medium">Posição liberada para alocação múltipla!</p>
+                                        <div v-if="caixasJaNoEnderecoAlvo.length > 0" class="bg-chumbo-950 p-2.5 rounded-lg border border-chumbo-700 text-xs">
+                                            <span class="font-bold text-slate-300 block mb-1">Já existem {{ caixasJaNoEnderecoAlvo.length }} caixa(s) neste endereço:</span>
+                                            <div class="flex flex-wrap gap-1.5">
+                                                <span v-for="cx in caixasJaNoEnderecoAlvo" :key="cx.id" 
+                                                      class="font-mono text-[11px] bg-gb-verde/20 text-gb-verde border border-gb-verde/30 px-2 py-0.5 rounded font-bold">
+                                                    SKU {{ cx.sku }} ({{ cx.quantidadeUnidades }} un)
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end pt-2">
+                            <button type="submit" :disabled="!validacaoAlocacao.valido"
+                                    class="px-6 py-3 bg-gb-magenta hover:bg-pink-600 disabled:bg-chumbo-700 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-[0_0_16px_rgba(224,71,176,0.45)] transition flex items-center gap-2 text-sm">
+                                <i class="fa-solid fa-box-archive"></i>
+                                <span>Confirmar Alocação</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- EXPEDIÇÃO FEFO -->
+            <section v-if="activeTab === 'home' || activeTab === 'fefo'" class="bg-chumbo-800 rounded-2xl border neon-border-verde p-6 space-y-6">
+                <div class="bg-chumbo-850 p-5 rounded-xl border border-chumbo-700 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                    <div>
+                        <h3 class="text-base font-black text-white flex items-center gap-2">
+                            <i class="fa-solid fa-truck-ramp-box text-gb-verde"></i>
+                            <span>Expedição FEFO & Vencimentos</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-1">Baixe a planilha pronta para enviar à gerência com os produtos próximos ao vencimento.</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-end gap-3 w-full lg:w-auto">
+                        <div>
+                            <label class="text-[11px] font-bold text-gb-verde uppercase block mb-1">Filtrar Validade</label>
+                            <select v-model="fefoFiltroValidade" class="bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 text-xs font-bold text-white">
+                                <option value="TODOS">Todos os Produtos</option>
+                                <option value="ALERTA">Vencidos & Próximos (&lt; 6 meses)</option>
+                                <option value="PROXIMOS_12M">Vencimento em até 12 meses</option>
+                                <option value="VENCIDOS">Somente Vencidos</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="text-[11px] font-bold text-gb-verde uppercase block mb-1">Filtrar por SKU</label>
+                            <select v-model="fefoSKUFiltro" class="bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 text-xs font-bold text-white">
+                                <option value="">Todos os SKUs</option>
+                                <option v-for="sku in skusUnicosEmEstoque" :key="sku" :value="sku">{{ sku }}</option>
+                            </select>
+                        </div>
+
+                        <button @click="baixarPlanilhaVencimentos" 
+                                class="px-4 py-2 bg-gb-verde hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-[0_0_15px_rgba(0,155,101,0.45)] flex items-center gap-2 transition">
+                            <i class="fa-solid fa-file-arrow-down text-sm"></i>
+                            <span>Baixar Planilha ({{ listaEstoqueFEFO.length }})</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-chumbo-900 rounded-xl border border-chumbo-700 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-chumbo-950 text-gb-verde font-bold uppercase text-[10px] tracking-wider border-b border-chumbo-700">
+                                    <th class="p-3.5">Fila FEFO</th>
+                                    <th class="p-3.5">SKU & Produto</th>
+                                    <th class="p-3.5">Endereço Posicional</th>
+                                    <th class="p-3.5">Lote</th>
+                                    <th class="p-3.5">Validade</th>
+                                    <th class="p-3.5 text-center">Qtd Itens</th>
+                                    <th class="p-3.5 text-right">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-chumbo-800 font-medium">
+                                <tr v-if="listaEstoqueFEFO.length === 0">
+                                    <td colspan="7" class="p-8 text-center text-slate-400 italic">Nenhum registro em estoque para o filtro selecionado.</td>
+                                </tr>
+                                <tr v-for="(item, idx) in listaEstoqueFEFO" :key="item.id"
+                                    :class="idx === 0 ? 'bg-amber-500/10' : 'hover:bg-chumbo-850'">
+                                    <td class="p-3.5">
+                                        <span v-if="idx === 0" class="inline-flex items-center gap-1 text-[10px] bg-amber-500 text-chumbo-950 font-black px-2.5 py-1 rounded-full shadow-sm">
+                                            <i class="fa-solid fa-star"></i> 1º RETIRAR
+                                        </span>
+                                        <span v-else class="text-[11px] font-bold text-slate-400 px-2 py-0.5 bg-chumbo-800 rounded">
+                                            {{ idx + 1 }}º na Fila
+                                        </span>
+                                    </td>
+                                    <td class="p-3.5">
+                                        <div class="font-mono font-bold text-white text-sm">{{ item.sku }}</div>
+                                        <div class="text-slate-400 text-[11px]">{{ item.produto }}</div>
+                                    </td>
+                                    <td class="p-3.5 font-mono font-extrabold text-gb-verde text-sm">{{ item.enderecoId }}</td>
+                                    <td class="p-3.5 font-mono text-slate-300">{{ item.lote }}</td>
+                                    <td class="p-3.5">
+                                        <span class="px-2 py-0.5 rounded font-bold text-[11px]" :class="getBadgeValidadeClass(item.validadeMMYY)">
+                                            {{ item.validadeMMYY }}
+                                        </span>
+                                    </td>
+                                    <td class="p-3.5 text-center font-bold text-white text-sm">{{ item.quantidadeUnidades }} un</td>
+                                    <td class="p-3.5 text-right">
+                                        <button @click="abrirModalBaixa(item)" class="px-3.5 py-1.5 bg-gb-verde hover:bg-emerald-600 text-white font-bold text-xs rounded-xl transition">
+                                            Dar Baixa / Expedir
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CONFIGURAÇÕES DE RACKS -->
+            <section v-if="activeTab === 'home' || activeTab === 'racks'" class="bg-chumbo-800 rounded-2xl border border-gb-eudora shadow-[0_0_20px_rgba(88,53,70,0.3)] p-6 space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                        <h3 class="text-base font-black text-white flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-gb-magenta"></i>
+                            <span>Configurações de Racks</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Crie, edite ou exclua seus racks personalizados.</p>
+                    </div>
+                    <button @click="abrirNovoRackModal" class="px-4 py-2 bg-gb-eudora hover:bg-purple-900 border border-gb-magenta/40 text-white font-bold text-xs rounded-xl flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Cadastrar Novo Rack</span>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div v-for="rack in racks" :key="rack.id" class="bg-chumbo-900 rounded-xl border border-chumbo-700 hover:border-gb-magenta/50 p-5 flex flex-col justify-between space-y-4 transition">
+                        <div>
+                            <div class="flex justify-between items-start border-b border-chumbo-800 pb-3">
+                                <div>
+                                    <span class="text-[10px] font-bold text-gb-magenta uppercase tracking-wider block">Rua {{ rack.rua }}</span>
+                                    <h4 class="text-lg font-black text-white font-mono">RACK {{ rack.rack }}</h4>
+                                    <p class="text-xs text-slate-400 font-medium">{{ rack.descricao || 'Grid Personalizado' }}</p>
+                                </div>
+                                <div class="flex items-center space-x-1">
+                                    <button @click="abrirEditarRack(rack)" title="Editar Rack" class="p-2 text-slate-400 hover:text-gb-verde hover:bg-chumbo-800 rounded-lg transition">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                    </button>
+                                    <button @click="confirmarExclusaoRack(rack)" title="Excluir Rack" class="p-2 text-slate-400 hover:text-rose-400 hover:bg-chumbo-800 rounded-lg transition">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 text-xs mt-3">
+                                <div class="bg-chumbo-850 p-2.5 rounded-lg border border-chumbo-800">
+                                    <span class="text-slate-400 block font-semibold text-[10px] uppercase">Linhas &times; Colunas</span>
+                                    <span class="font-bold text-white">{{ rack.linhas }} Linhas &times; {{ rack.colunas.length }} Colunas</span>
+                                </div>
+                                <div class="bg-chumbo-850 p-2.5 rounded-lg border border-chumbo-800">
+                                    <span class="text-slate-400 block font-semibold text-[10px] uppercase">Colunas</span>
+                                    <span class="font-bold font-mono text-gb-verde">{{ rack.colunas.join(', ') }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-chumbo-800 flex items-center justify-between text-[11px]">
+                            <span class="text-slate-400">Caixas alocadas: <strong class="text-white">{{ getCaixasNoRackCount(rack.id) }}</strong></span>
+                            <button @click="focarEVisualizarEndereco('', rack.id)" class="text-gb-magenta hover:underline font-bold">
+                                Ver no Mapa &rarr;
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CATÁLOGO DE SKUS -->
+            <section v-if="activeTab === 'home' || activeTab === 'skus'" class="bg-chumbo-800 rounded-2xl border neon-border-magenta p-6 space-y-4">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                        <h3 class="text-base font-black text-white flex items-center gap-2">
+                            <i class="fa-solid fa-tags text-gb-magenta"></i>
+                            <span>Catálogo de Produtos & SKUs</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Gerencie códigos, descrições, quantidades padrão e importação em lote.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button @click="abrirModalImportarSKU" class="px-4 py-2 bg-chumbo-900 hover:bg-chumbo-950 border border-gb-magenta/50 text-white font-bold text-xs rounded-xl flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-import text-gb-magenta"></i>
+                            <span>Importar Planilha</span>
+                        </button>
+                        <button @click="abrirNovoSKUModal" class="px-4 py-2 bg-gb-magenta hover:bg-pink-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Cadastrar SKU</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <div class="relative w-full sm:max-w-md">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input v-model="filtroCatalogoSKU" @input="paginaSkuAtual = 1" type="text" placeholder="Filtrar catálogo por SKU ou descrição..." 
+                               class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl pl-9 pr-4 py-2 text-xs text-white focus:ring-2 focus:ring-gb-magenta" />
+                    </div>
+                    <div class="text-xs text-slate-400 font-mono">
+                        Total: <strong class="text-white">{{ catalogoSKUsFiltrado.length }}</strong> SKUs cadastrados
+                    </div>
+                </div>
+
+                <div class="bg-chumbo-900 rounded-xl border border-chumbo-700 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-chumbo-950 text-gb-magenta font-bold uppercase text-[10px] tracking-wider border-b border-chumbo-700">
+                                    <th class="p-3">SKU</th>
+                                    <th class="p-3">Descrição do Produto</th>
+                                    <th class="p-3 text-center">Unidades Padrão/Caixa</th>
+                                    <th class="p-3 text-center">Caixas Alocadas</th>
+                                    <th class="p-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-chumbo-800 font-medium">
+                                <tr v-if="catalogoSKUsPaginados.length === 0">
+                                    <td colspan="5" class="p-6 text-center text-slate-400 italic">Nenhum SKU encontrado.</td>
+                                </tr>
+                                <tr v-for="s in catalogoSKUsPaginados" :key="s.sku" class="hover:bg-chumbo-850">
+                                    <td class="p-3 font-mono font-bold text-gb-verde text-sm">{{ s.sku }}</td>
+                                    <td class="p-3 text-white font-semibold">{{ s.descricao }}</td>
+                                    <td class="p-3 text-center text-slate-300 font-bold">{{ s.defaultQtd }} un</td>
+                                    <td class="p-3 text-center font-bold text-white">{{ getQtdCaixasEmEstoquePorSKU(s.sku) }} cx</td>
+                                    <td class="p-3 text-right space-x-1">
+                                        <button @click="abrirEditarSKUModal(s)" title="Editar" class="px-2.5 py-1 bg-chumbo-800 hover:bg-gb-eudora text-slate-200 rounded-lg font-bold transition">
+                                            <i class="fa-solid fa-pen mr-1"></i> Editar
+                                        </button>
+                                        <button @click="excluirSKU(s.sku)" title="Excluir" class="px-2 py-1 text-slate-400 hover:text-rose-400 rounded transition">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- PAGINAÇÃO DO CATÁLOGO -->
+                    <div v-if="totalPaginasSku > 1" class="bg-chumbo-950 px-4 py-3 border-t border-chumbo-700 flex items-center justify-between text-xs">
+                        <span class="text-slate-400">Página {{ paginaSkuAtual }} de {{ totalPaginasSku }}</span>
+                        <div class="flex space-x-2">
+                            <button @click="paginaSkuAtual--" :disabled="paginaSkuAtual === 1"
+                                    class="px-3 py-1 bg-chumbo-800 hover:bg-chumbo-700 disabled:opacity-40 text-white rounded font-bold">
+                                Anterior
+                            </button>
+                            <button @click="paginaSkuAtual++" :disabled="paginaSkuAtual >= totalPaginasSku"
+                                    class="px-3 py-1 bg-chumbo-800 hover:bg-chumbo-700 disabled:opacity-40 text-white rounded font-bold">
+                                Próxima
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- HISTÓRICO -->
+            <section v-if="activeTab === 'home' || activeTab === 'historico'" class="bg-chumbo-800 rounded-2xl border neon-border-vinho p-6 space-y-4">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                        <h3 class="text-base font-black text-white flex items-center gap-2">
+                            <i class="fa-solid fa-clock-rotate-left text-rose-400"></i>
+                            <span>Histórico de Audit Logs e Movimentações</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Rastreie todas as entradas, transferências e saídas do armazém com identificação do operador.</p>
+                    </div>
+
+                    <div class="w-full sm:w-72">
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input v-model="filtroHistorico" type="text" placeholder="Filtrar por SKU, lote ou operador..."
+                                   class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl pl-9 pr-4 py-2 text-xs text-white focus:ring-2 focus:ring-rose-500 font-mono" />
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-chumbo-900 rounded-xl border border-chumbo-700 overflow-hidden">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-chumbo-950 text-rose-400 font-bold uppercase text-[10px] tracking-wider border-b border-chumbo-700">
+                                <th class="p-3">Data/Hora</th>
+                                <th class="p-3">Operador</th>
+                                <th class="p-3">Tipo</th>
+                                <th class="p-3">SKU</th>
+                                <th class="p-3">Lote</th>
+                                <th class="p-3">Origem &rarr; Destino</th>
+                                <th class="p-3 text-right">Ações / Obs</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-chumbo-800 font-medium">
+                            <tr v-if="historicoFiltrado.length === 0">
+                                <td colspan="7" class="p-6 text-center text-slate-400 italic">Nenhum log encontrado para o filtro.</td>
+                            </tr>
+                            <tr v-for="h in historicoFiltrado" :key="h.id" class="hover:bg-chumbo-850">
+                                <td class="p-3 text-slate-400">{{ formatDataHora(h.dataHora) }}</td>
+                                <td class="p-3">
+                                    <div class="font-bold text-white">{{ h.operador || 'Sistema' }}</div>
+                                </td>
+                                <td class="p-3">
+                                    <span class="px-2 py-0.5 rounded font-bold text-[10px]"
+                                          :class="{
+                                            'bg-gb-verde/20 text-gb-verde border border-gb-verde/40': h.tipo === 'ENTRADA',
+                                            'bg-gb-magenta/20 text-gb-magenta border border-gb-magenta/40': h.tipo === 'TRANSFERENCIA',
+                                            'bg-amber-500/20 text-amber-300 border border-amber-500/40': h.tipo === 'SAIDA'
+                                          }">
+                                        {{ h.tipo }}
+                                    </span>
+                                </td>
+                                <td class="p-3 font-mono font-bold text-white">{{ h.sku }}</td>
+                                <td class="p-3 font-mono text-slate-300">{{ h.lote }}</td>
+                                <td class="p-3 font-mono text-gb-verde">
+                                    {{ h.origem || '-' }} &rarr; {{ h.destino || '-' }}
+                                </td>
+                                <td class="p-3 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <span class="text-slate-400">{{ h.obs }}</span>
+                                        <button v-if="usuarioLogado && usuarioLogado.perfil === 'ADMIN'" 
+                                                @click="excluirLogHistorico(h.id)" 
+                                                title="Excluir este log"
+                                                class="px-2 py-1 bg-gb-vinho/30 hover:bg-gb-vinho text-rose-300 hover:text-white rounded border border-rose-500/40 transition">
+                                            <i class="fa-solid fa-trash-can"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- PAINEL ADMINISTRATIVO -->
+            <section v-if="activeTab === 'admin' && usuarioLogado.perfil === 'ADMIN'" class="bg-chumbo-800 rounded-2xl border border-amber-500/40 p-6 space-y-6">
+                <div class="flex items-center justify-between border-b border-chumbo-700 pb-3">
+                    <h3 class="text-base font-black text-white flex items-center gap-2">
+                        <i class="fa-solid fa-shield-halved text-amber-400"></i>
+                        <span>Painel de Administração do Sistema</span>
+                    </h3>
+                    <span class="text-xs bg-amber-500/20 text-amber-300 font-bold px-3 py-1 rounded-full border border-amber-500/30">
+                        Acesso Restrito
+                    </span>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-amber-400">Usuários & Operadores</h4>
+                        <button @click="abrirModalNovoUsuario" class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-chumbo-950 font-black text-xs rounded-xl transition">
+                            <i class="fa-solid fa-user-plus mr-1"></i> Novo Operador
+                        </button>
+                    </div>
+
+                    <div class="bg-chumbo-900 rounded-xl border border-chumbo-700 overflow-hidden">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-chumbo-950 text-slate-300 font-bold uppercase text-[10px] border-b border-chumbo-700">
+                                    <th class="p-3">Nome / Usuário</th>
+                                    <th class="p-3">Perfil</th>
+                                    <th class="p-3">Status</th>
+                                    <th class="p-3 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-chumbo-800">
+                                <tr v-for="u in usuariosCadastrados" :key="u.usuario" class="hover:bg-chumbo-850">
+                                    <td class="p-3">
+                                        <div class="font-bold text-white">{{ u.nome }}</div>
+                                        <div class="font-mono text-[10px] text-slate-400">@{{ u.usuario }}</div>
+                                    </td>
+                                    <td class="p-3">
+                                        <span class="px-2 py-0.5 rounded font-bold text-[10px]" :class="u.perfil === 'ADMIN' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-chumbo-800 text-slate-300'">
+                                            {{ u.perfil }}
+                                        </span>
+                                    </td>
+                                    <td class="p-3">
+                                        <span class="text-emerald-400 font-bold">Ativo</span>
+                                    </td>
+                                    <td class="p-3 text-right space-x-2">
+                                        <button @click="abrirEditarUsuario(u)" class="px-2.5 py-1 bg-chumbo-800 hover:bg-amber-500 hover:text-chumbo-950 text-slate-200 rounded font-bold transition">
+                                            <i class="fa-solid fa-pen mr-1"></i> Editar
+                                        </button>
+                                        <button @click="excluirUsuario(u.usuario)" v-if="u.usuario !== 'admin'" class="px-2.5 py-1 bg-gb-vinho/30 hover:bg-gb-vinho text-rose-300 hover:text-white rounded font-bold transition">
+                                            Remover
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="space-y-4 pt-4 border-t border-chumbo-700">
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-amber-400">Dispositivos Conectados (Sincronização Ativa)</h4>
+                        <button @click="registrarDispositivoAtual" class="px-3 py-1 bg-chumbo-900 border border-chumbo-700 text-slate-300 text-xs rounded-lg hover:text-white">
+                            Atualizar Lista
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div v-for="disp in dispositivosConectados" :key="disp.id" class="bg-chumbo-900 p-4 rounded-xl border border-chumbo-700 space-y-2">
+                            <div class="flex justify-between items-start">
+                                <span class="font-bold text-white text-xs flex items-center gap-1.5">
+                                    <i class="fa-solid" :class="disp.tipo === 'iPhone' || disp.tipo === 'Mobile' ? 'fa-mobile-screen text-gb-magenta' : 'fa-laptop text-gb-verde'"></i>
+                                    <span>{{ disp.nome }}</span>
+                                </span>
+                                <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">Online</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400 font-mono">Último acesso: {{ disp.ultimoAcesso }}</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- MODAIS -->
+        <div v-if="modalNovoUsuario" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl shadow-2xl max-w-md w-full border border-amber-500/40 overflow-hidden">
+                <div class="bg-chumbo-950 text-white p-4 flex justify-between items-center border-b border-chumbo-700">
+                    <h3 class="text-sm font-bold">{{ formNovoUsuario.isEdicao ? 'Editar Operador' : 'Cadastrar Novo Operador' }}</h3>
+                    <button @click="modalNovoUsuario = false" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form @submit.prevent="salvarUsuario" class="p-5 space-y-4 text-xs font-semibold">
+                    <div>
+                        <label class="block text-slate-300 mb-1">Nome Completo *</label>
+                        <input v-model="formNovoUsuario.nome" type="text" placeholder="Ex: João Silva" required class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl p-2.5 text-white" />
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 mb-1">Nome de Usuário (Login) *</label>
+                        <input v-model="formNovoUsuario.usuario" type="text" placeholder="Ex: estoque" required :disabled="formNovoUsuario.isEdicao"
+                               class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl p-2.5 font-mono text-white disabled:opacity-50" />
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 mb-1">Senha (Nova senha ou manter) *</label>
+                        <input v-model="formNovoUsuario.senha" type="text" placeholder="••••••••" required class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl p-2.5 text-white font-mono" />
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 mb-1">Perfil de Acesso *</label>
+                        <select v-model="formNovoUsuario.perfil" class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl p-2.5 text-white font-bold">
+                            <option value="ESTOQUISTA">Estoquista (Alocação, Mapa, Expedição)</option>
+                            <option value="ADMIN">Administrador (Controle Total, Usuários, Racks)</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-3 border-t border-chumbo-700">
+                        <button type="button" @click="modalNovoUsuario = false" class="px-4 py-2 border border-chumbo-700 rounded-xl text-slate-300">Cancelar</button>
+                        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-chumbo-950 font-black rounded-xl">Salvar Operador</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="modalCelula" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl shadow-2xl max-w-xl w-full border neon-border-verde overflow-hidden max-h-[90vh] flex flex-col">
+                <div class="bg-chumbo-950 text-white p-4 flex justify-between items-center border-b border-chumbo-700">
+                    <h3 class="text-base font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-location-dot text-gb-verde"></i>
+                        <span>Posição: {{ modalCelula.enderecoId }}</span>
+                        <span class="text-xs bg-gb-verde/20 text-gb-verde border border-gb-verde/40 px-2.5 py-0.5 rounded-full">
+                            {{ modalCelula.caixas.length }} caixa(s)
+                        </span>
+                    </h3>
+                    <button @click="modalCelula = null" class="text-slate-400 hover:text-white">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="p-5 space-y-4 overflow-y-auto flex-1">
+                    <div v-if="modalCelula.caixas.length > 0" class="space-y-3">
+                        <div v-for="cx in modalCelula.caixas" :key="cx.id" 
+                             class="bg-chumbo-900 p-4 rounded-xl border border-chumbo-700 space-y-2">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <span class="font-mono font-black text-base text-gb-verde bg-gb-verde/15 border border-gb-verde/40 px-2 py-0.5 rounded">{{ cx.sku }}</span>
+                                    <h4 class="font-bold text-white text-sm mt-1">{{ cx.produto }}</h4>
+                                </div>
+                                <span class="px-2.5 py-1 bg-chumbo-800 border border-chumbo-700 text-slate-200 font-bold rounded-lg text-xs">
+                                    {{ cx.quantidadeUnidades }} un/cx
+                                </span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-chumbo-800 text-slate-300">
+                                <div>Lote: <strong class="font-mono text-white">{{ cx.lote }}</strong></div>
+                                <div>Validade: <strong class="font-bold px-1.5 py-0.5 rounded" :class="getBadgeValidadeClass(cx.validadeMMYY)">{{ cx.validadeMMYY }}</strong></div>
+                            </div>
+
+                            <div class="flex flex-wrap justify-end gap-2 pt-2">
+                                <button @click="excluirAlocacaoDireta(cx)" title="Remover alocação sem registrar saída"
+                                        class="px-3 py-1.5 bg-gb-vinho/30 hover:bg-gb-vinho text-rose-300 hover:text-white border border-rose-500/40 font-bold text-xs rounded-lg transition">
+                                    <i class="fa-solid fa-trash-can mr-1"></i> Excluir Alocação
+                                </button>
+                                <button @click="prepararTransferenciaCaixa(cx)" class="px-3 py-1.5 bg-chumbo-700 hover:bg-chumbo-800 text-white font-bold text-xs rounded-lg transition">
+                                    <i class="fa-solid fa-arrows-turn-to-dots mr-1"></i> Mover
+                                </button>
+                                <button @click="abrirModalBaixa(cx)" class="px-3 py-1.5 bg-gb-verde hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition">
+                                    <i class="fa-solid fa-hand-holding-box mr-1"></i> Expedir (Baixa)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-chumbo-700 flex justify-between items-center">
+                            <span class="text-xs text-slate-400">Deseja adicionar outra caixa nesta mesma posição?</span>
+                            <button @click="alocarDiretoNaCelula(modalCelula)" class="px-4 py-2 bg-gb-magenta hover:bg-pink-600 text-white font-bold text-xs rounded-xl">
+                                + Alocar Mais Aqui
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-else class="text-center py-6 border border-dashed border-chumbo-700 rounded-xl bg-chumbo-900">
+                        <i class="fa-solid fa-box-open text-3xl text-gb-verde/50 mb-2"></i>
+                        <p class="text-xs text-slate-400 font-medium mb-3">Esta célula está livre para receber alocação.</p>
+                        <button @click="alocarDiretoNaCelula(modalCelula)" class="px-4 py-2 bg-gb-verde hover:bg-emerald-600 text-white font-bold text-xs rounded-xl">
+                            Alocar Caixa Aqui
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="modalTransferencia" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl shadow-2xl max-w-md w-full border neon-border-magenta overflow-hidden">
+                <div class="bg-chumbo-950 text-white p-4 flex justify-between items-center border-b border-chumbo-700">
+                    <h3 class="text-sm font-bold">Transferir Caixa para Novo Endereço</h3>
+                    <button @click="modalTransferencia = null" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form @submit.prevent="executarTransferencia" class="p-5 space-y-4">
+                    <div class="text-xs bg-chumbo-900 p-3 rounded-xl border border-chumbo-700 space-y-1 text-slate-300">
+                        <div>SKU: <strong class="font-mono text-white">{{ modalTransferencia.caixa.sku }}</strong></div>
+                        <div>Endereço Atual: <strong class="font-mono text-gb-verde">{{ modalTransferencia.caixa.enderecoId }}</strong></div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-300 mb-1">Novo Endereço de Destino *</label>
+                        <input v-model="formTransferenciaNovoEnd" type="text" placeholder="Ex: R1-03-6-A" required 
+                               class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl p-2.5 font-mono text-sm uppercase font-bold text-white" />
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-2">
+                        <button type="button" @click="modalTransferencia = null" class="px-4 py-2 border border-chumbo-700 rounded-xl text-xs font-bold text-slate-300">Cancelar</button>
+                        <button type="submit" class="px-4 py-2 bg-gb-magenta hover:bg-pink-600 text-white font-bold text-xs rounded-xl">Mover Caixa</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="modalRackConfig" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl shadow-2xl max-w-md w-full border neon-border-verde overflow-hidden">
+                <div class="bg-chumbo-950 text-white p-4 flex justify-between items-center border-b border-chumbo-700">
+                    <h3 class="text-sm font-bold">{{ modalRackConfig.isEdicao ? 'Editar Rack' : 'Cadastrar Novo Rack' }}</h3>
+                    <button @click="modalRackConfig = null" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form @submit.prevent="salvarRackConfig" class="p-5 space-y-4 text-xs font-semibold">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-slate-300 mb-1">Rua *</label>
+                            <input v-model="modalRackConfig.rua" type="text" placeholder="Ex: 2" required :disabled="modalRackConfig.isEdicao"
+                                   class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 uppercase font-mono text-white disabled:opacity-50" />
+                        </div>
+                        <div>
+                            <label class="block text-slate-300 mb-1">Rack *</label>
+                            <input v-model="modalRackConfig.rack" type="text" placeholder="Ex: 02" required :disabled="modalRackConfig.isEdicao"
+                                   class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 uppercase font-mono text-white disabled:opacity-50" />
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-slate-300 mb-1">Linha (Níveis) *</label>
+                            <input v-model.number="modalRackConfig.linhas" type="number" min="1" max="20" required 
+                                   class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 font-bold text-white" />
+                        </div>
+                        <div>
+                            <label class="block text-slate-300 mb-1">Coluna (Número) *</label>
+                            <input v-model.number="modalRackConfig.qtdColunas" type="number" min="1" max="26" required 
+                                   class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 font-bold text-white" />
+                        </div>
+                    </div>
+                    <div class="bg-chumbo-900 border border-gb-verde/40 rounded-xl p-3">
+                        <span class="text-[11px] text-gb-verde font-bold block mb-1">Pré-visualização:</span>
+                        <p class="text-xs text-slate-300">
+                            <strong class="text-white">{{ modalRackConfig.linhas || 0 }} Linhas</strong> &times; 
+                            <strong class="text-white">{{ modalRackConfig.qtdColunas || 0 }} Colunas</strong>
+                            <span class="font-mono font-bold text-gb-verde ml-1">({{ gerarLetrasColunas(modalRackConfig.qtdColunas).join(', ') }})</span>
+                        </p>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-3 border-t border-chumbo-700">
+                        <button type="button" @click="modalRackConfig = null" class="px-4 py-2 border border-chumbo-700 rounded-xl text-slate-300">Cancelar</button>
+                        <button type="submit" class="px-4 py-2 bg-gb-verde hover:bg-emerald-600 text-white rounded-xl font-bold">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="modalExcluirRack" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl p-5 max-w-sm w-full space-y-3 border neon-border-vinho shadow-2xl">
+                <div class="flex items-center gap-2 text-rose-400">
+                    <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                    <h3 class="font-bold text-white text-sm">Excluir Rack R{{ modalExcluirRack.rua }}-{{ modalExcluirRack.rack }}?</h3>
+                </div>
+                <p class="text-xs text-slate-300">Tem certeza que deseja remover este Rack?</p>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button @click="modalExcluirRack = null" class="px-3 py-1.5 border border-chumbo-700 rounded-xl text-xs font-bold text-slate-300">Cancelar</button>
+                    <button @click="executarExclusaoRack" class="px-3 py-1.5 bg-gb-vinho hover:bg-rose-700 text-white rounded-xl text-xs font-bold">Excluir</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="modalSKU" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl shadow-2xl max-w-md w-full border neon-border-magenta overflow-hidden">
+                <div class="bg-chumbo-950 text-white p-4 flex justify-between items-center border-b border-chumbo-700">
+                    <h3 class="text-sm font-bold">{{ modalSKU.isEdicao ? 'Alterar Produto / SKU' : 'Cadastrar Novo SKU' }}</h3>
+                    <button @click="modalSKU = null" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form @submit.prevent="salvarSKU" class="p-5 space-y-4 text-xs font-semibold">
+                    <div>
+                        <label class="block text-slate-300 mb-1">Código SKU *</label>
+                        <input v-model="modalSKU.sku" type="text" placeholder="Ex: 48060" required :disabled="modalSKU.isEdicao"
+                               class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 uppercase font-mono font-bold text-white disabled:opacity-50" />
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 mb-1">Descrição do Produto *</label>
+                        <input v-model="modalSKU.descricao" type="text" placeholder="Ex: MALBEC BLEU DES COL 100ml" required
+                               class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 text-white" />
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 mb-1">Quantidade Padrão por Caixa *</label>
+                        <input v-model.number="modalSKU.defaultQtd" type="number" min="1" required
+                               class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl px-3 py-2 font-bold text-white" />
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-3 border-t border-chumbo-700">
+                        <button type="button" @click="modalSKU = null" class="px-4 py-2 border border-chumbo-700 rounded-xl text-slate-300">Cancelar</button>
+                        <button type="submit" class="px-4 py-2 bg-gb-magenta hover:bg-pink-600 text-white rounded-xl font-bold">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="modalImportarSKU" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-chumbo-800 rounded-2xl shadow-2xl max-w-2xl w-full border neon-border-magenta overflow-hidden max-h-[90vh] flex flex-col">
+                <div class="bg-chumbo-950 text-white p-4 flex justify-between items-center border-b border-chumbo-700">
+                    <h3 class="text-sm font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel text-gb-verde"></i>
+                        <span>Importar Planilha de Produtos / SKUs</span>
+                    </h3>
+                    <button @click="modalImportarSKU = null" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="p-5 space-y-4 overflow-y-auto text-xs">
+                    <div class="bg-chumbo-900 border border-chumbo-700 rounded-xl p-3.5 space-y-2">
+                        <p class="font-bold text-gb-magenta">Como importar:</p>
+                        <p class="text-slate-300">Selecione um arquivo <strong>.CSV / .TXT</strong> ou cole os dados diretamente (SKU ; Descrição ; Qtd Padrão).</p>
+                    </div>
+                    <div>
+                        <input type="file" accept=".csv,.txt" @change="lerArquivoPlanilhaSKU"
+                               class="block w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-gb-magenta file:text-white hover:file:bg-pink-600" />
+                    </div>
+                    <div>
+                        <textarea v-model="textoImportacaoSKU" rows="7" placeholder="Cole aqui suas linhas do Excel ou CSV..."
+                                  class="w-full bg-chumbo-900 border border-chumbo-700 rounded-xl p-3 font-mono text-xs text-white focus:ring-2 focus:ring-gb-magenta"></textarea>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input id="chk-substituir" type="checkbox" v-model="substituirCatalogoImportacao" class="rounded border-chumbo-700 text-gb-magenta" />
+                        <label for="chk-substituir" class="text-slate-300 font-semibold cursor-pointer">Substituir todo o catálogo atual</label>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-3 border-t border-chumbo-700">
+                        <button type="button" @click="modalImportarSKU = null" class="px-4 py-2 border border-chumbo-700 rounded-xl font-bold text-slate-300">Cancelar</button>
+                        <button type="button" @click="processarImportacaoSKU" class="px-5 py-2 bg-gb-magenta hover:bg-pink-600 text-white rounded-xl font-bold">Importar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOAST -->
+        <div v-if="toast" class="fixed bottom-5 right-5 z-50 flex items-center space-x-3 px-4 py-3 rounded-xl shadow-2xl text-white transition-all border"
+             :class="toast.tipo === 'sucesso' ? 'bg-gb-verde border-emerald-300/40' : 'bg-gb-vinho border-rose-400/40'">
+            <i class="fa-solid" :class="toast.tipo === 'sucesso' ? 'fa-circle-check text-lg' : 'fa-circle-xmark text-lg'"></i>
+            <span class="text-xs font-bold">{{ toast.mensagem }}</span>
+        </div>
+
+    </div>
+
+    <!-- SCRIPT VUE 3 -->
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    usuarioLogado: null,
+                    formLogin: { usuario: '', senha: '' },
+                    erroLogin: '',
+
+                    usuariosCadastrados: [
+                        { nome: 'Administrador Cedro Rosa', usuario: 'admin', senha: 'admin123', perfil: 'ADMIN' },
+                        { nome: 'Estoquista Principal', usuario: 'estoque', senha: '123456', perfil: 'ESTOQUISTA' }
+                    ],
+                    dispositivosConectados: [
+                        { id: 1, nome: navigator.platform.includes('iPhone') ? 'iPhone (Safari)' : 'Navegador Principal (PC)', tipo: navigator.platform.includes('iPhone') ? 'iPhone' : 'Desktop', ultimoAcesso: 'Agora mesmo' }
+                    ],
+                    modalNovoUsuario: false,
+                    formNovoUsuario: { isEdicao: false, nome: '', usuario: '', senha: '', perfil: 'ESTOQUISTA' },
+
+                    activeTab: 'home',
+                    esconderIlha: false,
+                    ultimoScrollY: 0,
+
+                    buscaGlobal: '',
+                    fefoSKUFiltro: '',
+                    fefoFiltroValidade: 'TODOS',
+                    filtroCatalogoSKU: '',
+                    paginaSkuAtual: 1,
+                    itensPorPaginaSku: 30,
+                    filtroHistorico: '',
+
+                    rackSelecionadoId: 'R2-02',
+
+                    modalCelula: null,
+                    modalTransferencia: null,
+                    formTransferenciaNovoEnd: '',
+
+                    modalRackConfig: null,
+                    modalExcluirRack: null,
+                    modalSKU: null,
+                    modalImportarSKU: false,
+                    textoImportacaoSKU: '',
+                    substituirCatalogoImportacao: false,
+
+                    toast: null,
+
+                    formAlocacao: {
+                        sku: '50022',
+                        produto: 'HER CODE EDP 50ml',
+                        quantidadeUnidades: 25,
+                        lote: 'L2611A',
+                        validadeMMYY: '11/30',
+                        rackId: 'R2-02',
+                        linha: 2,
+                        coluna: 'A',
+                        profundidade: 'ÚNICA'
+                    },
+
+                    racks: [],
+                    estoque: [],
+                    catalogoSKUs: [],
+                    historico: []
+                };
+            },
+            computed: {
+                rackAtual() {
+                    return this.racks.find(r => r.id === this.rackSelecionadoId) || this.racks[0];
+                },
+                rackAlocacaoAtual() {
+                    return this.racks.find(r => r.id === this.formAlocacao.rackId) || this.racks[0];
+                },
+                skuVinculadoCatalogo() {
+                    const codigo = (this.formAlocacao.sku || '').trim().toUpperCase();
+                    if (!codigo) return null;
+                    return this.catalogoSKUs.find(s => s.sku.toUpperCase() === codigo) || null;
+                },
+                totalCaixasEmEstoque() {
+                    return this.estoque.length;
+                },
+                totalUnidadesEmEstoque() {
+                    return this.estoque.reduce((acc, c) => acc + (c.quantidadeUnidades || 0), 0);
+                },
+                totalCelulasDisponiveis() {
+                    let total = 0;
+                    this.racks.forEach(r => { total += (r.linhas * r.colunas.length); });
+                    return total;
+                },
+                totalCelulasOcupadas() {
+                    const posicoesUnicas = new Set(this.estoque.map(e => `${e.rackId}-${e.linha}-${e.coluna}`));
+                    return posicoesUnicas.size;
+                },
+                taxaOcupacao() {
+                    if (this.totalCelulasDisponiveis === 0) return 0;
+                    return (this.totalCelulasOcupadas / this.totalCelulasDisponiveis) * 100;
+                },
+                catalogoSKUsFiltrado() {
+                    if (!this.filtroCatalogoSKU.trim()) return this.catalogoSKUs;
+                    const termo = this.filtroCatalogoSKU.toUpperCase().trim();
+                    return this.catalogoSKUs.filter(s => s.sku.toUpperCase().includes(termo) || s.descricao.toUpperCase().includes(termo));
+                },
+                totalPaginasSku() {
+                    return Math.ceil(this.catalogoSKUsFiltrado.length / this.itensPorPaginaSku) || 1;
+                },
+                catalogoSKUsPaginados() {
+                    const inicio = (this.paginaSkuAtual - 1) * this.itensPorPaginaSku;
+                    return this.catalogoSKUsFiltrado.slice(inicio, inicio + this.itensPorPaginaSku);
+                },
+                caixasJaNoEnderecoAlvo() {
+                    if (!this.rackAlocacaoAtual) return [];
+                    return this.estoque.filter(e => 
+                        e.rackId === this.formAlocacao.rackId &&
+                        e.linha === this.formAlocacao.linha &&
+                        e.coluna === this.formAlocacao.coluna
+                    );
+                },
+                skusUnicosEmEstoque() {
+                    return [...new Set(this.estoque.map(e => e.sku))].sort();
+                },
+                lotesVencidosCount() {
+                    return this.estoque.filter(item => this.calcularDiasValidade(item.validadeMMYY) < 0).length;
+                },
+                lotesProximosVencerCount() {
+                    return this.estoque.filter(item => {
+                        const dias = this.calcularDiasValidade(item.validadeMMYY);
+                        return dias >= 0 && dias <= 180;
+                    }).length;
+                },
+                enderecoCalculadoForm() {
+                    if (!this.rackAlocacaoAtual) return '';
+                    return `R${this.rackAlocacaoAtual.rua}-${this.rackAlocacaoAtual.rack}-${this.formAlocacao.linha}-${this.formAlocacao.coluna}`;
+                },
+                validacaoAlocacao() {
+                    if (!this.formAlocacao.rackId) return { valido: false, erros: ['Selecione o Rack.'] };
+                    return this.validarPosicao(this.formAlocacao.rackId, this.formAlocacao.linha, this.formAlocacao.coluna);
+                },
+                listaEstoqueFEFO() {
+                    let lista = [...this.estoque];
+                    if (this.fefoSKUFiltro) lista = lista.filter(i => i.sku === this.fefoSKUFiltro);
+                    if (this.fefoFiltroValidade === 'ALERTA') lista = lista.filter(i => this.calcularDiasValidade(i.validadeMMYY) <= 180);
+                    else if (this.fefoFiltroValidade === 'PROXIMOS_12M') lista = lista.filter(i => this.calcularDiasValidade(i.validadeMMYY) <= 365);
+                    else if (this.fefoFiltroValidade === 'VENCIDOS') lista = lista.filter(i => this.calcularDiasValidade(i.validadeMMYY) < 0);
+                    return lista.sort((a, b) => this.calcularDiasValidade(a.validadeMMYY) - this.calcularDiasValidade(b.validadeMMYY));
+                },
+                resultadoBuscaEstoque() {
+                    if (!this.buscaGlobal.trim()) return [];
+                    const termo = this.buscaGlobal.toUpperCase().trim();
+                    return this.estoque.filter(i => 
+                        i.sku.toUpperCase().includes(termo) ||
+                        i.produto.toUpperCase().includes(termo) ||
+                        i.lote.toUpperCase().includes(termo) ||
+                        i.enderecoId.toUpperCase().includes(termo)
+                    );
+                },
+                historicoFiltrado() {
+                    if (!this.filtroHistorico.trim()) return this.historico;
+                    const termo = this.filtroHistorico.toUpperCase().trim();
+                    return this.historico.filter(h =>
+                        h.sku.toUpperCase().includes(termo) ||
+                        h.lote.toUpperCase().includes(termo) ||
+                        (h.obs && h.obs.toUpperCase().includes(termo)) ||
+                        (h.operador && h.operador.toUpperCase().includes(termo)) ||
+                        (h.destino && h.destino.toUpperCase().includes(termo))
+                    );
+                }
+            },
+            mounted() {
+                this.carregarDados();
+                window.addEventListener('scroll', this.gerenciarScrollIlha, { passive: true });
+                
+                const sessao = localStorage.getItem('wms_sessao_ativa_' + window.name) || sessionStorage.getItem('wms_usuario_logado');
+                if (sessao) {
+                    try {
+                        this.usuarioLogado = JSON.parse(sessao);
+                    } catch(e) {
+                        this.usuarioLogado = null;
+                    }
+                }
+            },
+            beforeUnmount() {
+                window.removeEventListener('scroll', this.gerenciarScrollIlha);
+            },
+            methods: {
+                realizarLogin() {
+                    this.erroLogin = '';
+                    const usr = this.formLogin.usuario.trim().toLowerCase();
+                    const pwd = this.formLogin.senha.trim();
+
+                    const encontrado = this.usuariosCadastrados.find(u => u.usuario.toLowerCase() === usr && u.senha === pwd);
+                    if (encontrado) {
+                        this.usuarioLogado = encontrado;
+                        if (!window.name) {
+                            window.name = 'tab_' + Math.random().toString(36).substring(2, 9);
+                        }
+                        localStorage.setItem('wms_sessao_ativa_' + window.name, JSON.stringify(encontrado));
+                        sessionStorage.setItem('wms_usuario_logado', JSON.stringify(encontrado));
+                        this.exibirToast(`Bem-vindo, ${encontrado.nome}!`, 'sucesso');
+                    } else {
+                        this.erroLogin = 'Usuário ou senha incorretos.';
+                    }
+                },
+                realizarLogout() {
+                    if (window.name) {
+                        localStorage.removeItem('wms_sessao_ativa_' + window.name);
+                    }
+                    sessionStorage.removeItem('wms_usuario_logado');
+                    this.usuarioLogado = null;
+                    this.activeTab = 'home';
+                },
+                abrirModalNovoUsuario() {
+                    this.formNovoUsuario = { isEdicao: false, nome: '', usuario: '', senha: '', perfil: 'ESTOQUISTA' };
+                    this.modalNovoUsuario = true;
+                },
+                abrirEditarUsuario(usuarioObj) {
+                    this.formNovoUsuario = { isEdicao: true, nome: usuarioObj.nome, usuario: usuarioObj.usuario, senha: usuarioObj.senha, perfil: usuarioObj.perfil };
+                    this.modalNovoUsuario = true;
+                },
+                salvarUsuario() {
+                    const f = this.formNovoUsuario;
+                    if (f.isEdicao) {
+                        const idx = this.usuariosCadastrados.findIndex(u => u.usuario === f.usuario);
+                        if (idx >= 0) {
+                            this.usuariosCadastrados[idx].nome = f.nome.trim();
+                            this.usuariosCadastrados[idx].senha = f.senha.trim();
+                            this.usuariosCadastrados[idx].perfil = f.perfil;
+                        }
+                        this.exibirToast('Operador atualizado com sucesso!', 'sucesso');
+                    } else {
+                        const existe = this.usuariosCadastrados.some(u => u.usuario.toLowerCase() === f.usuario.toLowerCase().trim());
+                        if (existe) {
+                            this.exibirToast('Este nome de usuário já existe!', 'erro');
+                            return;
+                        }
+                        this.usuariosCadastrados.push({
+                            nome: f.nome.trim(),
+                            usuario: f.usuario.toLowerCase().trim(),
+                            senha: f.senha.trim(),
+                            perfil: f.perfil
+                        });
+                        this.exibirToast('Novo operador cadastrado com sucesso!', 'sucesso');
+                    }
+                    this.salvarNoLocalStorage();
+                    this.modalNovoUsuario = false;
+                },
+                excluirUsuario(usuario) {
+                    this.usuariosCadastrados = this.usuariosCadastrados.filter(u => u.usuario !== usuario);
+                    this.salvarNoLocalStorage();
+                    this.exibirToast('Operador removido.', 'sucesso');
+                },
+                registrarDispositivoAtual() {
+                    this.exibirToast('Lista de dispositivos atualizada.', 'sucesso');
+                },
+
+                gerenciarScrollIlha() {
+                    const atualY = window.scrollY;
+                    if (atualY > this.ultimoScrollY && atualY > 90) this.esconderIlha = true;
+                    else if (atualY < this.ultimoScrollY) this.esconderIlha = false;
+                    this.ultimoScrollY = atualY;
+                },
+                baixarPlanilhaVencimentos() {
+                    const itens = this.listaEstoqueFEFO;
+                    if (itens.length === 0) {
+                        this.exibirToast('Nenhum produto encontrado para exportar.', 'erro');
+                        return;
+                    }
+                    let csv = '\uFEFFPrioridade;SKU;Produto;Endereco;Rua;Rack;Linha;Coluna;Lote;Validade;Qtd\n';
+                    itens.forEach((item, idx) => {
+                        const partes = item.enderecoId.split('-');
+                        csv += `${idx + 1};${item.sku};"${item.produto}";${item.enderecoId};${partes[0].replace('R','')};${partes[1]};${item.linha};${item.coluna};${item.lote};${item.validadeMMYY};${item.quantidadeUnidades}\n`;
+                    });
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `vencimentos_cedro_rosa_${new Date().toISOString().split('T')[0]}.csv`;
+                    link.click();
+                    this.exibirToast('Planilha baixada com sucesso!', 'sucesso');
+                },
+                carregarDados() {
+                    const cacheWMS = localStorage.getItem('wms_cache_optimized_v5');
+                    if (cacheWMS) {
+                        try {
+                            const dados = JSON.parse(cacheWMS);
+                            this.racks = dados.racks || [];
+                            this.estoque = dados.estoque || [];
+                            this.catalogoSKUs = dados.catalogoSKUs || this.getCatalogoSKUsDefault();
+                            this.historico = dados.historico || [];
+                            if (dados.usuariosCadastrados) {
+                                this.usuariosCadastrados = dados.usuariosCadastrados;
+                            }
+                        } catch (e) {
+                            this.carregarDadosDemonstracao();
+                        }
+                    } else {
+                        const rSalvos = localStorage.getItem('wms_racks_v4');
+                        const eSalvo = localStorage.getItem('wms_estoque_v4');
+                        const cSalvo = localStorage.getItem('wms_catalogo_v4');
+                        const hSalvo = localStorage.getItem('wms_historico_v4');
+
+                        if (rSalvos && eSalvo) {
+                            this.racks = JSON.parse(rSalvos);
+                            this.estoque = JSON.parse(eSalvo);
+                            this.catalogoSKUs = cSalvo ? JSON.parse(cSalvo) : this.getCatalogoSKUsDefault();
+                            this.historico = hSalvo ? JSON.parse(hSalvo) : [];
+                            this.salvarNoLocalStorage();
+                        } else {
+                            this.carregarDadosDemonstracao();
+                        }
+                    }
+
+                    const uSalvos = localStorage.getItem('wms_usuarios_v1');
+                    if (uSalvos) {
+                        try {
+                            this.usuariosCadastrados = JSON.parse(uSalvos);
+                        } catch(err){}
+                    }
+                },
+                getCatalogoSKUsDefault() {
+                    return [
+                        { sku: '50022', descricao: 'HER CODE EDP 50ml', defaultQtd: 25 },
+                        { sku: '48060', descricao: 'MALBEC BLEU DES COL 100ml', defaultQtd: 12 },
+                        { sku: '74103', descricao: 'LILY ABSOLU EDP 75ml', defaultQtd: 10 },
+                        { sku: '88135', descricao: 'FLORATTA EDP ROSE SUCREE 75ML', defaultQtd: 12 },
+                        { sku: '74096', descricao: 'GLAMOUR DES COL 75ml V6', defaultQtd: 18 }
+                    ];
+                },
+                carregarDadosDemonstracao() {
+                    this.racks = [
+                        { id: 'R2-02', rua: '2', rack: '02', descricao: 'Perfumaria Mista', linhas: 5, colunas: ['A', 'B', 'C', 'D', 'E'], status: 'ATIVO' },
+                        { id: 'R2-03', rua: '2', rack: '03', descricao: 'Perfumaria', linhas: 6, colunas: ['A', 'B', 'C', 'D', 'E'], status: 'ATIVO' }
+                    ];
+                    this.catalogoSKUs = this.getCatalogoSKUsDefault();
+                    this.estoque = [
+                        { id: 'cx-1', sku: '50022', produto: 'HER CODE EDP 50ml', quantidadeUnidades: 25, lote: 'L2611A', validadeMMYY: '11/30', rackId: 'R2-02', linha: 2, coluna: 'A', enderecoId: 'R2-02-2-A' },
+                        { id: 'cx-2', sku: '48060', produto: 'MALBEC BLEU DES COL 100ml', quantidadeUnidades: 12, lote: 'L4806B', validadeMMYY: '08/29', rackId: 'R2-02', linha: 2, coluna: 'A', enderecoId: 'R2-02-2-A' },
+                        { id: 'cx-3', sku: '74103', produto: 'LILY ABSOLU EDP 75ml', quantidadeUnidades: 10, lote: 'L7410C', validadeMMYY: '05/28', rackId: 'R2-02', linha: 2, coluna: 'A', enderecoId: 'R2-02-2-A' }
+                    ];
+                    this.historico = [];
+                    this.salvarNoLocalStorage();
+                },
+                salvarNoLocalStorage() {
+                    const pacoteCache = {
+                        racks: this.racks,
+                        estoque: this.estoque,
+                        catalogoSKUs: this.catalogoSKUs,
+                        historico: this.historico,
+                        usuariosCadastrados: this.usuariosCadastrados,
+                        atualizadoEm: new Date().toISOString()
+                    };
+                    localStorage.setItem('wms_cache_optimized_v5', JSON.stringify(pacoteCache));
+                    localStorage.setItem('wms_usuarios_v1', JSON.stringify(this.usuariosCadastrados));
+                },
+                validarPosicao(rackId, linha, coluna) {
+                    const rack = this.racks.find(r => r.id === rackId);
+                    if (!rack) return { valido: false, erros: ['Rack não encontrado.'] };
+                    if (linha < 1 || linha > rack.linhas) return { valido: false, erros: [`Linha ${linha} inválida.`] };
+                    if (!rack.colunas.includes(coluna)) return { valido: false, erros: [`Coluna ${coluna} inválida.`] };
+                    return { valido: true, erros: [] };
+                },
+                confirmarAlocacaoCaixa() {
+                    if (!this.validacaoAlocacao.valido) return;
+                    const nomeOperador = this.usuarioLogado ? this.usuarioLogado.nome : 'Sistema';
+                    const novaCaixa = {
+                        id: 'cx-' + Date.now(),
+                        sku: this.formAlocacao.sku.toUpperCase().trim(),
+                        produto: this.formAlocacao.produto.trim(),
+                        quantidadeUnidades: Number(this.formAlocacao.quantidadeUnidades),
+                        lote: this.formAlocacao.lote.toUpperCase().trim(),
+                        validadeMMYY: this.formAlocacao.validadeMMYY.trim(),
+                        rackId: this.formAlocacao.rackId,
+                        linha: this.formAlocacao.linha,
+                        coluna: this.formAlocacao.coluna,
+                        enderecoId: this.enderecoCalculadoForm
+                    };
+                    this.estoque.push(novaCaixa);
+                    this.historico.unshift({
+                        id: 'log-' + Date.now(),
+                        dataHora: new Date().toISOString(),
+                        operador: nomeOperador,
+                        tipo: 'ENTRADA',
+                        sku: novaCaixa.sku,
+                        lote: novaCaixa.lote,
+                        origem: null,
+                        destino: novaCaixa.enderecoId,
+                        obs: `Alocação de ${novaCaixa.quantidadeUnidades} un`
+                    });
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`Caixa alocada em ${novaCaixa.enderecoId}!`, 'sucesso');
+                },
+                onSKUInput() {
+                    const codigoDigitado = (this.formAlocacao.sku || '').trim().toUpperCase();
+                    const item = this.catalogoSKUs.find(s => s.sku.toUpperCase() === codigoDigitado);
+                    if (item) {
+                        this.formAlocacao.produto = item.descricao;
+                        this.formAlocacao.quantidadeUnidades = item.defaultQtd;
+                    }
+                },
+                onRackAlocacaoChange() {
+                    const r = this.rackAlocacaoAtual;
+                    if (!r) return;
+                    this.formAlocacao.linha = 1;
+                    this.formAlocacao.coluna = r.colunas[0];
+                },
+                getLinhasDecrescentes(totalLinhas) {
+                    const arr = [];
+                    for (let i = totalLinhas; i >= 1; i--) arr.push(i);
+                    return arr;
+                },
+                getCelulaConteudos(rack, linha, coluna) {
+                    return this.estoque.filter(e => e.rackId === rack.id && e.linha === linha && e.coluna === coluna);
+                },
+                getCelulaStyleClass(rack, linha, coluna) {
+                    const caixas = this.getCelulaConteudos(rack, linha, coluna);
+                    if (caixas.length === 0) return 'bg-chumbo-850 border-chumbo-700 hover:border-gb-verde';
+                    if (caixas.some(c => this.calcularDiasValidade(c.validadeMMYY) < 0)) return 'bg-gb-vinho/25 border-rose-500';
+                    if (caixas.some(c => { const d = this.calcularDiasValidade(c.validadeMMYY); return d >= 0 && d <= 180; })) return 'bg-amber-500/15 border-amber-400';
+                    return 'bg-gb-verde/10 neon-border-verde';
+                },
+                clicarNaCelula(rack, linha, coluna) {
+                    this.modalCelula = {
+                        rack,
+                        linha,
+                        coluna,
+                        enderecoId: `R${rack.rua}-${rack.rack}-${linha}-${coluna}`,
+                        caixas: this.getCelulaConteudos(rack, linha, coluna)
+                    };
+                },
+                alocarDiretoNaCelula(modal) {
+                    this.formAlocacao.rackId = modal.rack.id;
+                    this.formAlocacao.linha = modal.linha;
+                    this.formAlocacao.coluna = modal.coluna;
+                    this.modalCelula = null;
+                    this.activeTab = 'entrada';
+                },
+                excluirAlocacaoDireta(caixa) {
+                    this.estoque = this.estoque.filter(i => i.id !== caixa.id);
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`Alocação do SKU ${caixa.sku} excluída.`, 'sucesso');
+                    if (this.modalCelula) {
+                        this.modalCelula.caixas = this.getCelulaConteudos(this.modalCelula.rack, this.modalCelula.linha, this.modalCelula.coluna);
+                    }
+                },
+                prepararTransferenciaCaixa(caixa) {
+                    this.modalTransferencia = { caixa };
+                    this.formTransferenciaNovoEnd = '';
+                },
+                executarTransferencia() {
+                    const end = this.formTransferenciaNovoEnd.toUpperCase().trim();
+                    const partes = end.split('-');
+                    if (partes.length < 4) {
+                        this.exibirToast('Formato inválido! Use R2-02-2-A', 'erro');
+                        return;
+                    }
+                    const nomeOperador = this.usuarioLogado ? this.usuarioLogado.nome : 'Sistema';
+                    const c = this.modalTransferencia.caixa;
+                    const orig = c.enderecoId;
+                    c.rackId = `${partes[0]}-${partes[1]}`;
+                    c.linha = parseInt(partes[2], 10) || c.linha;
+                    c.coluna = partes[3] || c.coluna;
+                    c.enderecoId = end;
+
+                    this.historico.unshift({
+                        id: 'log-' + Date.now(),
+                        dataHora: new Date().toISOString(),
+                        operador: nomeOperador,
+                        tipo: 'TRANSFERENCIA',
+                        sku: c.sku,
+                        lote: c.lote,
+                        origem: orig,
+                        destino: end,
+                        obs: 'Transferência manual'
+                    });
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`Caixa movida para ${end}!`, 'sucesso');
+                    this.modalTransferencia = null;
+                    this.modalCelula = null;
+                },
+                abrirModalBaixa(caixa) {
+                    const nomeOperador = this.usuarioLogado ? this.usuarioLogado.nome : 'Sistema';
+                    this.estoque = this.estoque.filter(i => i.id !== caixa.id);
+                    this.historico.unshift({
+                        id: 'log-' + Date.now(),
+                        dataHora: new Date().toISOString(),
+                        operador: nomeOperador,
+                        tipo: 'SAIDA',
+                        sku: caixa.sku,
+                        lote: caixa.lote,
+                        origem: caixa.enderecoId,
+                        destino: null,
+                        obs: 'Expedição / Baixa'
+                    });
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`Baixa confirmada!`, 'sucesso');
+                    if (this.modalCelula) {
+                        this.modalCelula.caixas = this.getCelulaConteudos(this.modalCelula.rack, this.modalCelula.linha, this.modalCelula.coluna);
+                    }
+                },
+                excluirLogHistorico(logId) {
+                    this.historico = this.historico.filter(h => h.id !== logId);
+                    this.salvarNoLocalStorage();
+                    this.exibirToast('Registro de histórico excluído.', 'sucesso');
+                },
+                focarEVisualizarEndereco(endId, rackId) {
+                    if (rackId) this.rackSelecionadoId = rackId;
+                    this.activeTab = 'mapa';
+                    this.buscaGlobal = '';
+                },
+                gerarLetrasColunas(qtd) {
+                    const num = Math.max(1, Math.min(26, parseInt(qtd, 10) || 1));
+                    const letras = [];
+                    for (let i = 0; i < num; i++) letras.push(String.fromCharCode(65 + i));
+                    return letras;
+                },
+                abrirNovoRackModal() {
+                    this.modalRackConfig = { isEdicao: false, rua: '', rack: '', linhas: 5, qtdColunas: 5 };
+                },
+                abrirEditarRack(rack) {
+                    this.modalRackConfig = { isEdicao: true, rua: rack.rua, rack: rack.rack, linhas: rack.linhas, qtdColunas: rack.colunas.length };
+                },
+                salvarRackConfig() {
+                    const cfg = this.modalRackConfig;
+                    const novoId = `R${cfg.rua.toUpperCase().trim()}-${cfg.rack.toUpperCase().trim()}`;
+                    const colunasGeradas = this.gerarLetrasColunas(cfg.qtdColunas);
+                    const rackObj = {
+                        id: novoId,
+                        rua: cfg.rua.toUpperCase().trim(),
+                        rack: cfg.rack.toUpperCase().trim(),
+                        descricao: `Grid ${cfg.linhas}x${colunasGeradas.length}`,
+                        linhas: Number(cfg.linhas),
+                        colunas: colunasGeradas,
+                        status: 'ATIVO'
+                    };
+                    const idx = this.racks.findIndex(r => r.id === novoId);
+                    if (idx >= 0) this.racks[idx] = rackObj;
+                    else this.racks.push(rackObj);
+
+                    this.rackSelecionadoId = novoId;
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`Rack ${novoId} salvo!`, 'sucesso');
+                    this.modalRackConfig = null;
+                },
+                confirmarExclusaoRack(rack) {
+                    this.modalExcluirRack = rack;
+                },
+                executarExclusaoRack() {
+                    if (!this.modalExcluirRack) return;
+                    const idRemover = this.modalExcluirRack.id;
+                    this.racks = this.racks.filter(r => r.id !== idRemover);
+                    this.estoque = this.estoque.filter(e => e.rackId !== idRemover);
+                    if (this.rackSelecionadoId === idRemover) this.rackSelecionadoId = this.racks[0]?.id || '';
+                    this.salvarNoLocalStorage();
+                    this.exibirToast('Rack excluído!', 'sucesso');
+                    this.modalExcluirRack = null;
+                },
+                getCaixasNoRackCount(rackId) {
+                    return this.estoque.filter(e => e.rackId === rackId).length;
+                },
+                abrirNovoSKUModal() {
+                    this.modalSKU = { isEdicao: false, sku: '', descricao: '', defaultQtd: 12 };
+                },
+                abrirEditarSKUModal(item) {
+                    this.modalSKU = { isEdicao: true, sku: item.sku, descricao: item.descricao, defaultQtd: item.defaultQtd };
+                },
+                salvarSKU() {
+                    const s = this.modalSKU;
+                    const skuLimpo = s.sku.toUpperCase().trim();
+                    const obj = { sku: skuLimpo, descricao: s.descricao.trim(), defaultQtd: Number(s.defaultQtd) || 1 };
+                    const idx = this.catalogoSKUs.findIndex(item => item.sku === skuLimpo);
+                    if (idx >= 0) this.catalogoSKUs[idx] = obj;
+                    else this.catalogoSKUs.unshift(obj);
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`SKU ${skuLimpo} salvo!`, 'sucesso');
+                    this.modalSKU = null;
+                },
+                excluirSKU(sku) {
+                    this.catalogoSKUs = this.catalogoSKUs.filter(s => s.sku !== sku);
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`SKU ${sku} removido.`, 'sucesso');
+                },
+                abrirModalImportarSKU() {
+                    this.textoImportacaoSKU = '';
+                    this.substituirCatalogoImportacao = false;
+                    this.modalImportarSKU = true;
+                },
+                lerArquivoPlanilhaSKU(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => { this.textoImportacaoSKU = e.target.result; };
+                    reader.readAsText(file, 'UTF-8');
+                },
+                processarImportacaoSKU() {
+                    if (!this.textoImportacaoSKU.trim()) return;
+                    const linhas = this.textoImportacaoSKU.split(/\r?\n/).filter(l => l.trim().length > 0);
+                    const novosItens = [];
+                    linhas.forEach(linha => {
+                        let partes = linha.split(';');
+                        if (partes.length < 2) partes = linha.split('\t');
+                        if (partes.length >= 2) {
+                            novosItens.push({ sku: partes[0].trim().toUpperCase(), descricao: partes[1].trim(), defaultQtd: parseInt(partes[2], 10) || 12 });
+                        }
+                    });
+                    
+                    if (this.substituirCatalogoImportacao) {
+                        this.catalogoSKUs = novosItens;
+                    } else {
+                        const mapaExistentes = new Map(this.catalogoSKUs.map(s => [s.sku, s]));
+                        novosItens.forEach(n => {
+                            mapaExistentes.set(n.sku, n);
+                        });
+                        this.catalogoSKUs = Array.from(mapaExistentes.values());
+                    }
+
+                    this.salvarNoLocalStorage();
+                    this.exibirToast(`Importação concluída (${novosItens.length} SKUs)!`, 'sucesso');
+                    this.modalImportarSKU = false;
+                    this.paginaSkuAtual = 1;
+                },
+                getQtdCaixasEmEstoquePorSKU(sku) {
+                    return this.estoque.filter(e => e.sku === sku).length;
+                },
+                calcularDiasValidade(valStr) {
+                    if (!valStr) return 999;
+                    const partes = valStr.split('/');
+                    if (partes.length === 2) {
+                        const mes = parseInt(partes[0], 10);
+                        const ano = 2000 + parseInt(partes[1], 10);
+                        return Math.floor((new Date(ano, mes - 1, 28) - new Date()) / (1000 * 60 * 60 * 24));
+                    }
+                    return 999;
+                },
+                getBadgeValidadeClass(valStr) {
+                    const dias = this.calcularDiasValidade(valStr);
+                    if (dias < 0) return 'bg-gb-vinho text-rose-200 border border-rose-500/40';
+                    if (dias <= 180) return 'bg-amber-500/20 text-amber-300 border border-amber-500/40';
+                    return 'bg-gb-verde/20 text-gb-verde border border-gb-verde/40';
+                },
+                formatDataHora(isoStr) {
+                    if (!isoStr) return '-';
+                    return new Date(isoStr).toLocaleString('pt-BR');
+                },
+                exibirToast(mensagem, tipo = 'sucesso') {
+                    this.toast = { mensagem, tipo };
+                    setTimeout(() => { this.toast = null; }, 3500);
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
